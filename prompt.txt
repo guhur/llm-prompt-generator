@@ -1,0 +1,669 @@
+# Package: llm-prompt-generator
+
+Build a nice reading prompt for LLM from your code
+
+## Function: ChantierType
+
+class ChantierType(Enum):
+    CHAUFFAGE_BOIS = 'Chauffage bois'
+    ISOLATION = 'Isolation'
+    VENTILATION = 'Ventilation'
+    EAU_CHAUDE = 'Eau chaude'
+    ENERGIE_RENOUVELABLE = 'Energie renouvelable'
+
+## Function: ChauffageBoisType
+
+class ChauffageBoisType(Enum):
+    INSERT = 'Insert'
+    FOYER_FERME = 'Foyer fermé'
+    POELE = 'Poêle'
+    CHAUDIERE = 'Chaudière'
+
+## Function: CombustibleType
+
+class CombustibleType(Enum):
+    GRANULES = 'Granulés'
+    BUCHES = 'Bûches'
+
+## Function: ChauffageBoisDetail
+
+class ChauffageBoisDetail(BaseModel):
+    type: ChauffageBoisType | None = None
+    combustible: CombustibleType | None = None
+    puissance: int | None = None
+
+## Function: Chantier
+
+class Chantier(BaseModel):
+    type: ChantierType
+    detail: ChauffageBoisDetail | None = None
+    label: str | None = None
+
+## Function: Project
+
+class Project(BaseModel):
+    chantiers: list[Chantier] = []
+
+## Function: Status
+
+class Status(Enum):
+    SCI = 'SCI'
+    BAILLEUR = 'Bailleur'
+    PRINCIPAL = 'Résidence principale'
+    SECONDARY = 'Résidence secondaire'
+
+## Function: Region
+
+class Region(Enum):
+    IDF = 'Île-de-France'
+    OTHER = 'Other regions'
+
+## Function: TrancheType
+
+class TrancheType(Enum):
+    TRES_MODESTE = 'Très modeste'
+    MODESTE = 'Modeste'
+    INTERMEDIAIRE = 'Intermédiaire'
+    SUPERIEURE = 'Supérieure'
+
+## Function: Individual
+
+Base class for all individuals.
+
+## Function: set_tranche
+
+class Individual(BaseModel):
+    """
+    Base class for all individuals.
+    """
+    email: str
+    first_name: str | None = None
+    last_name: str | None = None
+    id: str | None = None
+    address: str | None = None
+    region: Region | None = None
+    status: Status | None = None
+    rfr: tuple[int | None, int | None] | None
+    num_pers: int | None
+    tranche: TrancheType | None = None
+
+    @root_validator(pre=True)
+    def set_full_name(cls, values):
+        first_name = values.get('first_name')
+        last_name = values.get('last_name')
+        if first_name and last_name:
+            values['full_name'] = f'{first_name} {last_name}'
+        return values
+
+    @root_validator(pre=True)
+    def set_region_and_tranche(cls, values):
+        if values.get('region') is None:
+            values['region'] = set_region(values)
+        if values.get('tranche') is None:
+            values['tranche'] = set_tranche(values)
+        return values
+
+## Function: set_region
+
+def set_tranche(values):
+    rfr = values.get('rfr')
+    num_pers = values.get('num_pers')
+    region = values.get('region')
+    if region == Region.IDF:
+        thresholds = [22461, 32967, 39591, 46226, 52886]
+        additional_per_person = 6650
+    elif region == Region.OTHER:
+        thresholds = [16229, 23734, 28545, 33346, 38168]
+        additional_per_person = 4813
+    else:
+        raise ValidationError('Invalid region')
+    if num_pers > 5:
+        threshold = thresholds[4] + additional_per_person * (num_pers - 5)
+    else:
+        threshold = thresholds[num_pers - 1]
+    if rfr[1] is not None and rfr[1] <= threshold:
+        return TrancheType.TRES_MODESTE
+    if rfr[1] is not None and rfr[1] <= 1.2 * threshold:
+        return TrancheType.MODESTE
+    if rfr[1] is not None and rfr[1] <= 1.7 * threshold:
+        return TrancheType.INTERMEDIAIRE
+    return TrancheType.SUPERIEURE
+
+## Function: set_full_name
+
+def set_region(values):
+    address = values.get('address')
+    postal_code_match = re.search('\\b\\d{5}\\b', address)
+    if not postal_code_match:
+        return Region.OTHER
+    postal_code = int(postal_code_match.group())
+    if 75001 <= postal_code <= 75020 or 77000 <= postal_code <= 77999 or 78000 <= postal_code <= 78999 or (91000 <= postal_code <= 91999) or (92000 <= postal_code <= 92999) or (93000 <= postal_code <= 93999) or (94000 <= postal_code <= 94999) or (95000 <= postal_code <= 95999):
+        return Region.IDF
+    else:
+        return Region.OTHER
+
+## Function: set_region_and_tranche
+
+@root_validator(pre=True)
+def set_full_name(cls, values):
+    first_name = values.get('first_name')
+    last_name = values.get('last_name')
+    if first_name and last_name:
+        values['full_name'] = f'{first_name} {last_name}'
+    return values
+
+## Function: Form
+
+@root_validator(pre=True)
+def set_region_and_tranche(cls, values):
+    if values.get('region') is None:
+        values['region'] = set_region(values)
+    if values.get('tranche') is None:
+        values['tranche'] = set_tranche(values)
+    return values
+
+## Function: Hidden
+
+Base class for all forms.
+It gathers informations about individual and their project.
+
+## Function: Field
+
+class Form(BaseModel):
+    """
+    Base class for all forms.
+    It gathers informations about individual and their project.
+    """
+    individual: Individual
+    company: Company
+    project: Project
+
+## Function: Choice
+
+class Hidden(BaseModel):
+    address: str | None = None
+    c: str | None = None
+    sudo: str | None = None
+    ventouse: str | None = None
+
+## Function: Choices
+
+class Field(BaseModel):
+    id: str
+    ref: str
+    type: str
+
+## Function: Answer
+
+class Choice(BaseModel):
+    label: str
+
+## Function: Variable
+
+class Choices(BaseModel):
+    labels: list[str]
+
+## Function: DefinitionChoice
+
+class Answer(BaseModel):
+    field: Field
+    type: str
+    text: str | None = None
+    number: int | None = None
+    boolean: bool | None = None
+    choice: Choice | None = None
+    choices: Choices | None = None
+    date: str | None = None
+    file_url: str | None = None
+
+## Function: DefinitionField
+
+class Variable(BaseModel):
+    key: str
+    type: str
+    text: str | None = None
+    number: int | None = None
+
+## Function: Definition
+
+class DefinitionChoice(BaseModel):
+    id: str
+    label: str
+
+## Function: FormResponse
+
+class DefinitionField(BaseModel):
+    id: str
+    title: str
+    type: str
+    ref: str
+    properties: dict
+    validations: dict | None = None
+    required: bool | None = None
+    text: str | None = None
+    number: int | None = None
+    boolean: bool | None = None
+    choice: DefinitionChoice | None = None
+    choices: list[DefinitionChoice] | None = None
+    date: str | None = None
+    file_url: str | None = None
+
+## Function: ReportField
+
+class Definition(BaseModel):
+    id: str
+    title: str
+    fields: list[DefinitionField]
+
+## Function: TypeForm
+
+class FormResponse(BaseModel):
+    form_id: str
+    token: str
+    landed_at: str
+    submitted_at: str
+    answers: list[Answer]
+    hidden: Hidden
+    variables: list[Variable]
+    definition: Definition
+    ending: dict | None = None
+    calculated: dict | None = None
+
+## Function: _parse_typeform_individual
+
+class ReportField(BaseModel):
+    id: str
+    field: str
+    answer: str | int | bool | None | list[str] = None
+    type: str
+
+## Function: _parse_typeform_project
+
+class TypeForm(BaseModel):
+    individual: Individual
+    company: Company
+    form_response: FormResponse
+    report: list[ReportField]
+
+    @root_validator(pre=True)
+    def _parse_typeform(cls, values):
+        values['individual'] = _parse_typeform_individual(values)
+        return values
+
+## Function: parse_typeform
+
+def _parse_typeform_individual(values: dict) -> Individual:
+    form_response = FormResponse(**values['form_response'])
+    revenu_questions = [question for question in form_response.definition.fields if 'revenu' in question.title.lower()]
+    rfr_answer: Answer | None = None
+    for question in revenu_questions:
+        for answer in form_response.answers:
+            if answer.field.id == question.id:
+                rfr_answer = answer
+                break
+    if rfr_answer is None or rfr_answer.choice is None:
+        raise ValueError('No answer found for revenu question')
+    rfr: tuple[int | None, int | None]
+    label = rfr_answer.choice.label.replace(' ', '')
+    if "Jusqu'à" in label:
+        rfr = (None, int(label.split("Jusqu'à")[1].split('€')[0]))
+    elif 'Plus de' in label:
+        rfr = (int(label.split('Plus de')[1].split('€')[0]), None)
+    else:
+        split = label.split(' et ')
+        rfr = (int(split[0].split('Entre')[1].split('€')[0]), int(split[1].split('€')[0]))
+    parts_questions = [question for question in form_response.definition.fields if 'foyer fiscal' in question.title.lower()]
+    parts_answer: Answer | None = None
+    for question in parts_questions:
+        for answer in form_response.answers:
+            if answer.field.id == question.id:
+                parts_answer = answer
+                break
+    if parts_answer is None or parts_answer.number is None:
+        raise ValueError('No answer found for parts question')
+    number_of_parts = parts_answer.number
+    values['individual']['rfr'] = rfr
+    values['individual']['num_pers'] = number_of_parts
+    address = None
+    for variable in form_response.variables:
+        if variable.key != 'address':
+            continue
+        address = variable.text
+        break
+    if address is None:
+        address_questions = [question for question in form_response.definition.fields if 'adresse' in question.title.lower()]
+        address_answer: Answer | None = None
+        for question in address_questions:
+            for answer in form_response.answers:
+                if answer.field.id == question.id:
+                    address_answer = answer
+                    break
+        if address_answer is None or address_answer.text is None:
+            raise ValueError('No answer found for address question')
+        address = address_answer.text
+    if address is None:
+        raise ValueError('No address found')
+    values['individual']['address'] = address
+    return Individual(**values['individual'])
+
+## Function: _parse_typeform
+
+def _parse_typeform_project(model: TypeForm) -> Project:
+    combustible = None
+    for variable in model.form_response.variables:
+        if variable.key != 'combustible':
+            continue
+        if variable.text == 'buches':
+            combustible = CombustibleType.BUCHES
+        elif variable.text == 'granules':
+            combustible = CombustibleType.GRANULES
+        else:
+            raise ValueError('Invalid combustible')
+        break
+    if combustible is None:
+        raise ValueError('No combustible found')
+    type = None
+    for variable in model.form_response.variables:
+        if variable.key != 'type':
+            continue
+        if variable.text == 'foyer_ferme':
+            type = ChauffageBoisType.FOYER_FERME
+        elif variable.text == 'insert':
+            type = ChauffageBoisType.INSERT
+        elif variable.text == 'poele':
+            type = ChauffageBoisType.POELE
+        else:
+            raise ValueError('Invalid chantier')
+        break
+    detail = ChauffageBoisDetail(type=type, combustible=combustible, puissance=None)
+    label = f"Installation d'un {type} à {combustible}"
+    project = Project(chantiers=[Chantier(type=ChantierType.CHAUFFAGE_BOIS, detail=detail, label=label)])
+    return project
+
+## Function: Company
+
+def parse_typeform(data: dict):
+    model = TypeForm(**data)
+    return Form(individual=model.individual, company=model.company, project=_parse_typeform_project(model))
+
+## Function: CoupDePouceCalculateur
+
+@root_validator(pre=True)
+def _parse_typeform(cls, values):
+    values['individual'] = _parse_typeform_individual(values)
+    return values
+
+## Function: CoupDePouce
+
+class Company(BaseModel):
+    id: str | None = None
+    email: str
+    nickname: str
+    name: str
+    rge: bool | None = None
+    ventouse: bool | None = None
+    aides: bool | None = None
+
+## Function: __call__
+
+    Calculateur des Coups de Pouce.
+
+    Tous les ménages peuvent bénéficier d’aides « coup de pouce ». Ces aides sont bonifiées pour les ménages aux revenus modestes et très modestes. Elles concernent les travaux suivants :
+    - le remplacement d’une chaudière au charbon, au fioul ou au gaz (autres qu’à condensation) par un équipement utilisant des énergies renouvelables (chaudière biomasse, pompe à chaleur air/eau, eau/eau ou hybride, système solaire combiné, raccordement à un réseau de chaleur) ;
+    - le remplacement d’un équipement de chauffage au charbon par un appareil de chauffage au bois possédant le label Flamme verte ou des performances équivalentes ;
+    - le remplacement dans les bâtiments collec- tifs, d’un conduit d’évacuation des produits de combustion incompatible avec des chau- dières individuelles au gaz à condensation ;
+    - la rénovation globale et performante d’un logement (sur la base d’un audit énergétique) : réalisation d’au moins 55 % d’économies d’énergie pour une maison et 35 % pour un bâtiment collectif avec ou sans remplacement d’une ancienne chaudière au fioul ou au charbon par une chaudière au gaz très performante ou un mode de chauffage renouvelable, ou remplacement d’une ancienne chaudière au gaz par un mode de chauffage renouvelable (utilisant au moins 40 % d’énergie renouvelable ou de récupération).
+
+PRIMES MINIMALES PRÉVUES PAR LES CHARTES « COUP DE POUCE CHAUFFAGE » ET « COUP DE POUCE THERMOSTAT AVEC RÉGULATION PERFORMANTE »
+| | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES |
+| | REMPLACEMENT D’UNE CHAUDIÈRE AU FIOUL PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU FIOUL PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU GAZ OU CHARBON PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU GAZ OU CHARBON PAR |
+| Une chaudière biomasse performante | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+| Une pompe à chaleur air/eau ou eau/eau | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+| Un système solaire combiné | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+| Une pompe à chaleur hybride | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+| Un raccordement à un réseau de chaleur EnR&R** 1 000 € 900 € 700 € 450 €
+* Individuelle (ou collective dans le cas d’un raccordement à un réseau de chaleur) au charbon, au fioul ou au gaz
+** Réseau de chaleur alimenté majoritairement par des énergies renouvelables ou de récupération
+
+| | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES |
+| REMPLACEMENT D'UN ÉQUIPEMENT DE CHAUFFAGE AU CHARBON PAR |
+| Un appareil indépendant de chauffage au bois très performant | 800 € | 500 € |
+| REMPLACEMENT DANS LES BÂTIMENTS COLLECTIFS |
+| D’un conduit d’évacuation des produits de combustion incompatible avec des chaudières individuelles au gaz à condensation  | 700 € | 450 € |
+
+Les aides financières en 2023
+EN MAISON INDIVIDUELLE : AU MOINS 55 % D’ÉCONOMIES D’ÉNERGIE PRIMAIRE
+APRÈS TRAVAUX
+CONSOMMATION D’ÉNERGIE PRIMAIRE ≤ 110 KWh/m2/an | CONSOMMATION D’ÉNERGIE PRIMAIRE > 110 KWh/m2/an |
+350 €/MWh/an économisés (en énergie finale) pour les ménages modestes
+300 €/MWh/an économisés (en énergie finale) pour les autres ménages
+250 €/MWh/an économisés (en énergie finale) pour les ménages modestes
+200 €/MWh/an économisés (en énergie finale) pour les autres ménages
+
+EN IMMEUBLE COLLECTIF :
+AU MOINS 35 % D’ÉCONOMIES D’ÉNERGIE PRIMAIRE
+APRÈS TRAVAUX
+CHALEUR RENOUVELABLE ≥ 50 %
+CHALEUR RENOUVELABLE < 50 %
+SITUATION INITIALE
+Chaudière charbon ou fioul
+500 €/MWh/an économisés (en énergie finale) pour tous les ménages
+300 €/MWh/an économisés (en énergie finale) pour tous les ménages
+Autre situation
+400 €/MWh/an économisés (en énergie finale) pour tous les ménages
+250 €/MWh/an économisés (en énergie finale) pour tous les ménage
+
+## Function: _montant_chauffage_bois
+
+class CoupDePouceCalculateur:
+    """
+        Calculateur des Coups de Pouce.
+
+        Tous les ménages peuvent bénéficier d’aides « coup de pouce ». Ces aides sont bonifiées pour les ménages aux revenus modestes et très modestes. Elles concernent les travaux suivants :
+        - le remplacement d’une chaudière au charbon, au fioul ou au gaz (autres qu’à condensation) par un équipement utilisant des énergies renouvelables (chaudière biomasse, pompe à chaleur air/eau, eau/eau ou hybride, système solaire combiné, raccordement à un réseau de chaleur) ;
+        - le remplacement d’un équipement de chauffage au charbon par un appareil de chauffage au bois possédant le label Flamme verte ou des performances équivalentes ;
+        - le remplacement dans les bâtiments collec- tifs, d’un conduit d’évacuation des produits de combustion incompatible avec des chau- dières individuelles au gaz à condensation ;
+        - la rénovation globale et performante d’un logement (sur la base d’un audit énergétique) : réalisation d’au moins 55 % d’économies d’énergie pour une maison et 35 % pour un bâtiment collectif avec ou sans remplacement d’une ancienne chaudière au fioul ou au charbon par une chaudière au gaz très performante ou un mode de chauffage renouvelable, ou remplacement d’une ancienne chaudière au gaz par un mode de chauffage renouvelable (utilisant au moins 40 % d’énergie renouvelable ou de récupération).
+
+    PRIMES MINIMALES PRÉVUES PAR LES CHARTES « COUP DE POUCE CHAUFFAGE » ET « COUP DE POUCE THERMOSTAT AVEC RÉGULATION PERFORMANTE »
+    | | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES |
+    | | REMPLACEMENT D’UNE CHAUDIÈRE AU FIOUL PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU FIOUL PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU GAZ OU CHARBON PAR | REMPLACEMENT D’UNE CHAUDIÈRE AU GAZ OU CHARBON PAR |
+    | Une chaudière biomasse performante | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+    | Une pompe à chaleur air/eau ou eau/eau | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+    | Un système solaire combiné | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+    | Une pompe à chaleur hybride | 5 000 € | 4 000 € | 4 000 € | 2 500 € |
+    | Un raccordement à un réseau de chaleur EnR&R** 1 000 € 900 € 700 € 450 €
+    * Individuelle (ou collective dans le cas d’un raccordement à un réseau de chaleur) au charbon, au fioul ou au gaz
+    ** Réseau de chaleur alimenté majoritairement par des énergies renouvelables ou de récupération
+
+    | | PRIME MÉNAGES MODESTES | PRIME AUTRES MÉNAGES |
+    | REMPLACEMENT D'UN ÉQUIPEMENT DE CHAUFFAGE AU CHARBON PAR |
+    | Un appareil indépendant de chauffage au bois très performant | 800 € | 500 € |
+    | REMPLACEMENT DANS LES BÂTIMENTS COLLECTIFS |
+    | D’un conduit d’évacuation des produits de combustion incompatible avec des chaudières individuelles au gaz à condensation  | 700 € | 450 € |
+
+    Les aides financières en 2023
+    EN MAISON INDIVIDUELLE : AU MOINS 55 % D’ÉCONOMIES D’ÉNERGIE PRIMAIRE
+    APRÈS TRAVAUX
+    CONSOMMATION D’ÉNERGIE PRIMAIRE ≤ 110 KWh/m2/an | CONSOMMATION D’ÉNERGIE PRIMAIRE > 110 KWh/m2/an |
+    350 €/MWh/an économisés (en énergie finale) pour les ménages modestes
+    300 €/MWh/an économisés (en énergie finale) pour les autres ménages
+    250 €/MWh/an économisés (en énergie finale) pour les ménages modestes
+    200 €/MWh/an économisés (en énergie finale) pour les autres ménages
+
+    EN IMMEUBLE COLLECTIF :
+    AU MOINS 35 % D’ÉCONOMIES D’ÉNERGIE PRIMAIRE
+    APRÈS TRAVAUX
+    CHALEUR RENOUVELABLE ≥ 50 %
+    CHALEUR RENOUVELABLE < 50 %
+    SITUATION INITIALE
+    Chaudière charbon ou fioul
+    500 €/MWh/an économisés (en énergie finale) pour tous les ménages
+    300 €/MWh/an économisés (en énergie finale) pour tous les ménages
+    Autre situation
+    400 €/MWh/an économisés (en énergie finale) pour tous les ménages
+    250 €/MWh/an économisés (en énergie finale) pour tous les ménage
+    """
+
+    def __call__(self, individual: Individual, project: Project) -> int:
+        """
+        Calcul du montant des Coups de Pouce
+        """
+        if [c.type for c in project.chantiers] != [ChantierType.CHAUFFAGE_BOIS]:
+            raise NotImplementedError(" n'est pas encore disponible pour ce type de chantier")
+        return self._montant_chauffage_bois(individual, project.chantiers[0])
+
+    def _montant_chauffage_bois(self, individual: Individual, chantier: Chantier) -> int:
+        """
+        Calcul du montant de Coup De Pouce pour un chantier de chauffage bois
+        """
+        if chantier.detail is None or chantier.detail.type is None:
+            raise ValueError('Le détail du chantier est obligatoire')
+        if individual.tranche is None:
+            raise ValueError('La tranche de revenu est obligatoire')
+        if chantier.detail.combustible is None:
+            raise ValueError('Le combustible est obligatoire')
+        raise NotImplementedError('TODO')
+
+## Function: MaPrimeRenovCalculateur
+
+Base class for all CoupDePouce.
+
+## Function: MaPrimeRenov
+
+class CoupDePouce(Aides):
+    """
+    Base class for all CoupDePouce.
+    """
+    organisme: str | None = 'ANAH'
+    nom: str | None = 'CoupDePouce'
+    territoire: AidesTerritoire | None = AidesTerritoire(type='nationale')
+    montant: AidesCalculateur = CoupDePouceCalculateur()
+    is_eligible: AidesEligibility = lambda *_: True
+    comment: str | None = None
+    type: str = 'coupdepouce'
+
+## Function: __call__
+
+Calcul du montant des Coups de Pouce
+
+## Function: _montant_chauffage_bois
+
+def __call__(self, individual: Individual, project: Project) -> int:
+    """
+        Calcul du montant des Coups de Pouce
+        """
+    if [c.type for c in project.chantiers] != [ChantierType.CHAUFFAGE_BOIS]:
+        raise NotImplementedError(" n'est pas encore disponible pour ce type de chantier")
+    return self._montant_chauffage_bois(individual, project.chantiers[0])
+
+## Function: TVATauxReduitCalculateur
+
+Calcul du montant de Coup De Pouce pour un chantier de chauffage bois
+
+## Function: TVATauxReduit
+
+def _montant_chauffage_bois(self, individual: Individual, chantier: Chantier) -> int:
+    """
+        Calcul du montant de Coup De Pouce pour un chantier de chauffage bois
+        """
+    if chantier.detail is None or chantier.detail.type is None:
+        raise ValueError('Le détail du chantier est obligatoire')
+    if individual.tranche is None:
+        raise ValueError('La tranche de revenu est obligatoire')
+    if chantier.detail.combustible is None:
+        raise ValueError('Le combustible est obligatoire')
+    raise NotImplementedError('TODO')
+
+## Function: __call__
+
+Calculateur de MaPrimeRenov
+
+## Function: _montant_chauffage_bois
+
+class MaPrimeRenovCalculateur:
+    """
+    Calculateur de MaPrimeRenov
+    """
+
+    def __call__(self, individual: Individual, project: Project) -> int:
+        """
+        Calcul du montant de MaPrimeRenov
+        """
+        if [c.type for c in project.chantiers] != [ChantierType.CHAUFFAGE_BOIS]:
+            raise NotImplementedError("MaPrimeRenov n'est pas encore disponible pour ce type de chantier")
+        return self._montant_chauffage_bois(individual, project.chantiers[0])
+
+    def _montant_chauffage_bois(self, individual: Individual, chantier: Chantier) -> int:
+        """
+        Calcul du montant de MaPrimeRenov pour un chantier de chauffage bois
+        """
+        if chantier.detail is None or chantier.detail.type is None:
+            raise ValueError('Le détail du chantier est obligatoire')
+        if individual.tranche is None:
+            raise ValueError('La tranche de revenu est obligatoire')
+        if chantier.detail.combustible is None:
+            raise ValueError('Le combustible est obligatoire')
+        montant = {ChauffageBoisType.POELE: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 2000, TrancheType.INTERMEDIAIRE: 1000, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 2000, TrancheType.INTERMEDIAIRE: 1500, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.CHAUDIERE: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 8000, TrancheType.MODESTE: 6500, TrancheType.INTERMEDIAIRE: 3000, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 10000, TrancheType.MODESTE: 8000, TrancheType.INTERMEDIAIRE: 4000, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.FOYER_FERME: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.INSERT: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}}}
+        if chantier.detail.type not in montant.keys():
+            raise ValueError(f"Le type de chauffage bois {chantier.detail.type} n'est pas pris en charge")
+        montant_type = montant[chantier.detail.type]
+        if chantier.detail.combustible not in montant_type.keys():
+            raise ValueError(f"Le combustible {chantier.detail.combustible} n'est pas pris en charge")
+        montant_type_combustible = montant_type[chantier.detail.combustible]
+        if individual.tranche not in montant_type_combustible.keys():
+            raise ValueError(f"La tranche de revenu {individual.tranche} n'est pas prise en charge")
+        return montant_type_combustible[individual.tranche]
+
+## Function: AidesTerritoire
+
+class MaPrimeRenov(Aides):
+    organisme: str | None = 'ANAH'
+    nom: str | None = 'MaPrimeRénov'
+    territoire: AidesTerritoire | None = AidesTerritoire(type='nationale')
+    montant: AidesCalculateur = MaPrimeRenovCalculateur()
+    is_eligible: AidesEligibility = lambda *_: True
+    comment: str | None = None
+    type: str = 'maprimerenov'
+
+## Function: Aides
+
+Calcul du montant de MaPrimeRenov
+
+## Function: EcoPTZCalculateur
+
+def __call__(self, individual: Individual, project: Project) -> int:
+    """
+        Calcul du montant de MaPrimeRenov
+        """
+    if [c.type for c in project.chantiers] != [ChantierType.CHAUFFAGE_BOIS]:
+        raise NotImplementedError("MaPrimeRenov n'est pas encore disponible pour ce type de chantier")
+    return self._montant_chauffage_bois(individual, project.chantiers[0])
+
+## Function: EcoPTZ
+
+Calcul du montant de MaPrimeRenov pour un chantier de chauffage bois
+
+## Function: __call__
+
+def _montant_chauffage_bois(self, individual: Individual, chantier: Chantier) -> int:
+    """
+        Calcul du montant de MaPrimeRenov pour un chantier de chauffage bois
+        """
+    if chantier.detail is None or chantier.detail.type is None:
+        raise ValueError('Le détail du chantier est obligatoire')
+    if individual.tranche is None:
+        raise ValueError('La tranche de revenu est obligatoire')
+    if chantier.detail.combustible is None:
+        raise ValueError('Le combustible est obligatoire')
+    montant = {ChauffageBoisType.POELE: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 2000, TrancheType.INTERMEDIAIRE: 1000, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 2000, TrancheType.INTERMEDIAIRE: 1500, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.CHAUDIERE: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 8000, TrancheType.MODESTE: 6500, TrancheType.INTERMEDIAIRE: 3000, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 10000, TrancheType.MODESTE: 8000, TrancheType.INTERMEDIAIRE: 4000, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.FOYER_FERME: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}}, ChauffageBoisType.INSERT: {CombustibleType.BUCHES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}, CombustibleType.GRANULES: {TrancheType.TRES_MODESTE: 2500, TrancheType.MODESTE: 1500, TrancheType.INTERMEDIAIRE: 800, TrancheType.SUPERIEURE: 0}}}
+    if chantier.detail.type not in montant.keys():
+        raise ValueError(f"Le type de chauffage bois {chantier.detail.type} n'est pas pris en charge")
+    montant_type = montant[chantier.detail.type]
+    if chantier.detail.combustible not in montant_type.keys():
+        raise ValueError(f"Le combustible {chantier.detail.combustible} n'est pas pris en charge")
+    montant_type_combustible = montant_type[chantier.detail.combustible]
+    if individual.tranche not in montant_type_combustible.keys():
+        raise ValueError(f"La tranche de revenu {individual.tranche} n'est pas prise en charge")
+    return montant_type_combustible[individual.tranche]
+

@@ -1,0 +1,20 @@
+[tool.poetry]
+name = "llm-prompt-generator"
+version = "0.1.0"
+description = "Build a nice reading prompt for LLM from your code"
+authors = ["Pierre-Louis Guhur <pierre-louis.guhur@laposte.net>"]
+license = "MIT"
+readme = "README.md"
+packages = [{include = "llm_prompt_generator"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+mypy = {version = "^1.4.1", optional = true}
+black = {version = "^23.7.0", optional = true}
+typed-argument-parser = "^1.8.1"
+toml = "^0.10.2"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
